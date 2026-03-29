@@ -152,6 +152,11 @@ class HeavyLoadUser(HttpUser):
         """Gyors főoldal lekérések"""
         self.client.get("/", name="/ (heavy)")
 
+    @task(15)
+    def stress_endpoint(self):
+        """CPU-intenzív endpoint a skálázás teszteléséhez"""
+        self.client.get("/api/stress?n=5000000", name="/api/stress (CPU heavy)")
+
 
 # Event handler a teszt indításakor
 @events.test_start.add_listener
