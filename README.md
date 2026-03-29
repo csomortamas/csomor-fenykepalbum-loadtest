@@ -1,99 +1,65 @@
-# Fényképalbum Terheléspróba (Load Test)
+# Terheléspróba dokumentáció
 
-Ez a projekt a **csomor-paas-fenykepalbum** automatikus skálázódásának tesztelésére szolgál.
+### Az automatikus skálázódás konfigurációja Heroku platformon
 
-## Projekt struktúra
+A Herokun hozzáadtam a Rails Autoscale add-on-t (Judoscale).
 
-```
-csomor-fenykepalbum-loadtest/
-├── locustfile.py      # Locust terheléspróba forgatókönyv
-├── requirements.txt   # Python függőségek
-├── Procfile          # Heroku process definíció
-├── runtime.txt       # Python verzió
-└── README.md         # Ez a fájl
-```
+![alt text](image.png)
 
-## Locust terheléspróba
+Ennek a webes felületén beállítottam a következő autoscale paramétereket:
+- Response Time Threshold:
+    - Scale up: Response time > 300 ms
+    - Scale down: Response time < 100 ms
+- Dynos száma: 1-3
+- Upscale jumps: 1
+- Upscale frequency (minimum idő az upscale-ek között): 30 s
+- Upscale sensitivity (idő, amíg a válaszidőknek elég nagynak kell lenniük): 10 s
+- Downscale jumps: 1
+- Downscale delay (downscale közötti minimum idő): 2 min
 
-A `locustfile.py` két felhasználói típust definiál:
+### A terheléspróba eredményeinek dokumentálása
 
-### 1. PhotoAlbumUser (normál felhasználó)
-- Fotók listázása (leggyakoribb művelet)
-- Egyedi fotó lekérése
-- Főoldal betöltése
-- Felhasználói státusz ellenőrzése
-- Bejelentkezés/kijelentkezés ciklus
-- Health check
+#### 1. Próbálkozás
+--- 
+A Locust konfigurációja a következő volt:
 
-### 2. HeavyLoadUser (intenzív terhelés)
-- Gyors, egymás utáni kérések
-- Minimális várakozási idő
+![alt text](image-1.png)
 
-## Lefedett funkciók
+Ezzel a konfigurációval azonban a terhelés nem volt elég nagy ahhoz, hogy a skálázási események bekövetkezzenek.
 
-| Funkció | Endpoint | Leírás |
-|---------|----------|--------|
-| Fotólista | GET /api/photos | Lapozott fotólista lekérése |
-| Fotó részlet | GET /api/photos/:id | Egyedi fotó lekérése |
-| Főoldal | GET / | Statikus tartalom |
-| Regisztráció | POST /api/register | Új felhasználó létrehozása |
-| Bejelentkezés | POST /api/login | Session létrehozása |
-| Kijelentkezés | POST /api/logout | Session törlése |
-| User státusz | GET /api/user | Aktuális felhasználó |
-| Health check | GET /healthz | Alkalmazás állapot |
+![alt text](image-2.png)
 
-## Lokális futtatás
+#### A megoldás
 
-```bash
-# Python virtuális környezet létrehozása
-python -m venv venv
-source venv/bin/activate  # Linux/Mac
-venv\Scripts\activate     # Windows
+Mivel a Response time közel sem volt a 300 ms-hez, ezért hozzáadtam egy olyan endpointot, ami szándékosan lassú válaszidővel rendelkezik:
 
-# Függőségek telepítése
-pip install -r requirements.txt
-
-# Locust indítása
-locust -f locustfile.py --host=https://csomor-paas-fenykepalbum-3872bd2f225d.herokuapp.com
+```js
+app.get('/api/stress', (req, res) => {
+  const iterations = parseInt(req.query.n) || 1000000;
+  let result = 0;
+  for (let i = 0; i < iterations; i++) {
+    result += Math.sqrt(i) * Math.sin(i);
+  }
+  res.json({ result, iterations });
+});
 ```
 
-Ezután nyisd meg a böngészőben: http://localhost:8089
-
-## Heroku-n futtatás
-
-Ez a projekt deployolható Herokura, hogy felhőből futtathassuk a terheléspróbát.
-
-```bash
-# Heroku app létrehozása
-heroku create csomor-fenykepalbum-loadtest
-
-# Deploy
-git push heroku main
-
-# Megnyitás
-heroku open
+Amit a Locustban a következőképpen hívtam meg:
+```python
+@task(15)
+def stress_endpoint(self):
+    self.client.get("/api/stress?n=5000000", name="/api/stress (CPU heavy)")
 ```
 
-## Konfiguráció
+Ezzel a módosítással sikerült elérni, hogy a response time bőven meghaladja a 300 ms-ot, így felskálázódott az alkalmazás 3 dynora.
 
-A Locust Web UI-n beállítható:
-- **Number of users**: Szimulált felhasználók száma
-- **Spawn rate**: Felhasználók indítási sebessége (/s)
-- **Host**: A tesztelendő alkalmazás URL-je
+![alt text](image-3.png)
 
-## Ajánlott tesztforgatókönyvek
+A képen látható, hogy a response time jelentősen megnőtt a skálázási események előtt, majd a skálázás után visszaesett. A Locust leállítása után pedig visszaskálázódott 1 dynora.
 
-### 1. Baseline teszt
-- Felhasználók: 10
-- Spawn rate: 1/s
-- Időtartam: 5 perc
+![alt text](image-4.png)
 
-### 2. Skálázódási teszt
-- Felhasználók: 50-100
-- Spawn rate: 5/s
-- Időtartam: 10-15 perc
+### Tanulságok
 
-### 3. Stressz teszt
-- Felhasználók: 200+
-- Spawn rate: 10/s
-- Időtartam: 20+ perc
+- A Heroku platformon a Judoscale add-on segítségével könnyen beállítható az automatikus skálázódás.
+
