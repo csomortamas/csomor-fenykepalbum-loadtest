@@ -1,0 +1,7 @@
+{
+  "name": "fenykepalbum-loadtest",
+  "description": "Locust terheléspróba a fényképalbum alkalmazáshoz",
+  "repository": "https://github.com/csomortamas/csomor-fenykepalbum-loadtest",
+  "keywords": ["locust", "load-testing", "heroku"],
+  "stack": "heroku-24"
+}
